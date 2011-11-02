@@ -22,6 +22,7 @@
  */
 
 #include <c8051f310.h>
+#include "spi.h"
 
 /**
  * SPI_SSEL is cleared to choose the reader as a slave for SPI communication

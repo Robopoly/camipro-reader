@@ -21,6 +21,29 @@
 #ifndef __CAMIPROREADER__H
 #define __CAMIPROREADER__H
 
+
+
+// 16-bit SFR Definitions for 'F30x
+sfr16 TMR2RL	= 0xca;					// Timer2 reload value
+sfr16 TMR2		= 0xcc;					// Timer2 counter
+
+// LEDs, buzzer and push-button
+sbit LED = P3^3;						// LED='1' means ON
+sbit LED_B = P2^0;
+sbit LED_G = P2^1;
+sbit LED_R = P2^2;
+sbit BUZZER = P2^3;
+
+sbit SW2 = P0^7;						// SW2='0' means switch pressed
+
+// Global constants
+
+// Clock frequencies
+#define SYSCLK				24500000	// SYSCLK frequency in Hz
+#define SPICLK				12845056	// SPI maximum SCK frequency in Hz
+
+// Adress and common values for CLRC632
+
 // Register addresses
 #define RFID_REG_PAGE			0x00
 
@@ -73,38 +96,13 @@
 #define RFID_REG_IRQ_PIN_CFG	0x2D
 
 // Command values (to use with RFID_REG_CMD)
-#define RFID_CMD_STARTUP	0x3F
-#define RFID_CMD_IDLE		0x00
-#define RFID_CMD_TRANSMIT	0x1A
-#define RFID_CMD_RECEIVE	0x16
-#define RFID_CMD_TRANSCEIVE	0x1E
-#define RFID_CMD_READE2		0x03
-#define RFID_CMD_WRITEE2	0x01
-#define RFID_CMD_LOADCONF	0x07
-
-//-----------------------------------------------------------------------------
-// 16-bit SFR Definitions for 'F30x
-//-----------------------------------------------------------------------------
-
-sfr16 TMR2RL	= 0xca;					// Timer2 reload value
-sfr16 TMR2		= 0xcc;					// Timer2 counter
-
-//-----------------------------------------------------------------------------
-// Global CONSTANTS
-//-----------------------------------------------------------------------------
-
-#define SYSCLK				24500000	// SYSCLK frequency in Hz
-
-sbit LED = P3^3;						// LED='1' means ON
-sbit LED_B = P2^0;
-sbit LED_G = P2^1;
-sbit LED_R = P2^2;
-sbit BUZZER = P2^3;
-
-sbit SW2 = P0^7;						// SW2='0' means switch pressed
-
-/* SPI Constants */
-#define SPICLK				12845056	// SPI maximum SCK frequency in Hz
-
+#define RFID_CMD_STARTUP		0x3F
+#define RFID_CMD_IDLE			0x00
+#define RFID_CMD_TRANSMIT		0x1A
+#define RFID_CMD_RECEIVE		0x16
+#define RFID_CMD_TRANSCEIVE		0x1E
+#define RFID_CMD_READE2			0x03
+#define RFID_CMD_WRITEE2		0x01
+#define RFID_CMD_LOADCONF		0x07
 
 #endif
