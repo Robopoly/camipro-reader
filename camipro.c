@@ -19,204 +19,98 @@
  */
 
 #include <string.h>
-#include <c8051f310.h>                    // SFR declarations
+#include <c8051f310.h>
 
 #include "camipro.h"
+#include "spi.h"
 
+#define BUFFER_SIZE	32
 
-/* SPI globals */
-unsigned char spi_input_buffer[MAX_BUFFER_SIZE] = {0};
-unsigned char spi_output_buffer[MAX_BUFFER_SIZE] = {0};
+#define GetRegPage(addr) (0x80|(addr>>3))
 
-//-----------------------------------------------------------------------------
-// Function PROTOTYPES
-//-----------------------------------------------------------------------------
-
+// Function prototypes
 void SYSCLK_Init (void);
 void PORT_Init (void);
 void SPI0_Init(void);
 
+void writeRegister(unsigned char address, unsigned char value);
+unsigned char readRegister(unsigned char address);
+void setBitMask(unsigned char reg,unsigned char mask);
+void clearBitMask(unsigned char reg,unsigned char mask);
+void flushFIFO(void);
+
 void RFIDTransceive(unsigned char size);
 
-//Imported from clrc636.c
+// Global buffers
+unsigned char spi_input_buffer[BUFFER_SIZE] = {0};
+unsigned char spi_output_buffer[BUFFER_SIZE] = {0};
 
-#define GetRegPage(addr) (0x80 | (addr>>3))
-
-void ssel_l(void)		 													//SPI_SSEL is cleared to choose the reader as a slave
-{																			//for SPI communication
-	NSSMD0 = 0;
-}
-
-void ssel_h(void)	   														//SPI_SSEL is set high to release the reader as a slave
-{																			//from SPI communication
-	NSSMD0 = 1;
-}
-
-
-unsigned char txrx(unsigned char donnee)
-{
-	volatile unsigned char readout;
-
-	SPIF = 0;
-	SPI0DAT = donnee;
-
-	while(!SPIF);
-
-	readout = SPI0DAT;
-	SPIF = 0;
-
-	return readout;
-}
-
-//write data to the Reader using the SPI Interface, data format: MOSI= adr, data0, data1,........
-//all data is written to the same address
-//unsigned char spi_wr(unsigned char wr_addr,unsigned char wr_count,unsigned char* wr_data)
-void spi_wr(unsigned char wr_addr,unsigned char wr_data)
-{
-	unsigned char dummy;
-	ssel_l();							  	//clears SSEL0 to start SPI communication
-	dummy = txrx((wr_addr<<1) & 0x7E);		//transmit the register address that will be writen to
-	dummy = txrx(wr_data); 					//transmit the data byte, no specific format for data							   	
-	ssel_h();								//sets SSEL0 to stop SPI communication
-}
-
-//read data from the Reader using the SPI Interface
-//data format is as follows:
-//MOSI: addr0, addr1, addr2, ...., datan   , 00
-//MISO: XX   , data0, data1, ...., datan-1 ,datan
-//unsigned long int spi_rd(unsigned char rd_count,unsigned char* rd_data)
-unsigned char spi_rd(unsigned char rd_data)
-{
-	unsigned char content;
-	ssel_l();
-	txrx((rd_data<<1)|0x80);		 				
-	content = txrx(0x00);				   								//transmit "00" and receive last data byte
-	ssel_h();
-	return content;
-}
-
-//! Write one byte to the reader IC address space
-void Write_Register(unsigned char address, unsigned char donnee)
-{
-	spi_wr(address & 0x07, donnee);
-}
-
-
-//! Read one byte from the reader IC address space
-unsigned char Read_Register(unsigned char reg)
-{
-	return spi_rd(reg & 0x07);
-}
-
-///////////////////////////////////////////////////////////////////////////////
-//          G E N E R I C    W R I T E
-///////////////////////////////////////////////////////////////////////////////
-void WriteRC(unsigned char address, unsigned char value)
-{
-	Write_Register(0x00,GetRegPage(address));	// select appropriate page by writing the page number to Page0 register
-	Write_Register(address,value);				// write value at the specified address   
-}
-
-///////////////////////////////////////////////////////////////////////////////
-//          G E N E R I C    R E A D
-///////////////////////////////////////////////////////////////////////////////
-unsigned char ReadRC(unsigned char address)
-{
-	Write_Register(0x00,GetRegPage(address));	// select appropriate page
-	return Read_Register(address);				//read value at the specified register, added as modification, 29.05.2007
-}
 
 
 //////////////////////////////////////////////////////////////////////
-//   S E T   A   B I T   M A S K 
-///////////////////////////////////////////////////////////////////////
-void SetBitMask(unsigned char reg,unsigned char mask)  
-{
-	char tmp = ReadRC(reg);
-	WriteRC(reg,tmp|mask);						// set bit mask
-}
-
-//////////////////////////////////////////////////////////////////////
-//   C L E A R   A   B I T   M A S K 
-///////////////////////////////////////////////////////////////////////
-void ClearBitMask(unsigned char reg,unsigned char mask) 
-{
-   char tmp = ReadRC(reg);
-   WriteRC(reg,tmp & ~mask);  											// clear bit mask
-}
-
-///////////////////////////////////////////////////////////////////////
-//                  F L U S H    F I F O
-///////////////////////////////////////////////////////////////////////
-void FlushFIFO(void)
-{  
-   SetBitMask(RFID_REG_CONTROL,0x01);
-}
-
-////////////////////////////////////////////////////////////////////// 
 //			RF - R E S E T 
-/////////////////////////////////////////////////////////////////////// 
+///////////////////////////////////////////////////////////////////////
 void I1PcdRfReset()   		// time periode in milliseconds 
 {
 	int i;
-	ClearBitMask(RFID_REG_TX_CTRL,0x03);	//	Tx2RF-En, Tx1RF-En disablen 
+	clearBitMask(RFID_REG_TX_CTRL,0x03);	//	Tx2RF-En, Tx1RF-En disablen 
 	//T0_Wait_ms(ms);
 
 	for(i=0; i<20000; i++);
-	SetBitMask(RFID_REG_TX_CTRL,0x03);	 	//	Tx2RF-En, Tx1RF-En enable 
+	setBitMask(RFID_REG_TX_CTRL,0x03);	 	//	Tx2RF-En, Tx1RF-En enable 
 	//init_stat_tbl();			        //initialises (clears) timeslot	status table 
     //TimeSlots = 0; 
 }
 
 void I1PcdConfig(void) 
 {
-	WriteRC(RFID_REG_TX_CTRL,0x48);
-	WriteRC(RFID_REG_CW_COND,0x3F);
-	WriteRC(RFID_REG_MOD_COND,0x02);	// must	be measured for	15% Modulation Index 
-	WriteRC(RFID_REG_CODER_CTRL,0x2C);
-	WriteRC(RFID_REG_MOD_WIDTH,0x3F); 
-	WriteRC(RFID_REG_MOD_WIDTH_SOF,0x3F); 
-	WriteRC(RFID_REG_BFRAM,0x00); //RFU17
+	writeRegister(RFID_REG_TX_CTRL,0x48);
+	writeRegister(RFID_REG_CW_COND,0x3F);
+	writeRegister(RFID_REG_MOD_COND,0x02);	// must	be measured for	15% Modulation Index 
+	writeRegister(RFID_REG_CODER_CTRL,0x2C);
+	writeRegister(RFID_REG_MOD_WIDTH,0x3F); 
+	writeRegister(RFID_REG_MOD_WIDTH_SOF,0x3F); 
+	writeRegister(RFID_REG_BFRAM,0x00); //RFU17
  
-	WriteRC(RFID_REG_RX_CTRL_1,0x8B); 
-	WriteRC(RFID_REG_DEC_CTRL,0x00); 
-	WriteRC(RFID_REG_BIT_PHASE,0x52);	 
-	WriteRC(RFID_REG_RX_THRESH,0x46); //66
-	WriteRC(RFID_REG_BPSKD_CTRL,0x00); 
-	WriteRC(RFID_REG_RX_CTRL_2,0x01); 
- 	WriteRC(RFID_REG_CLK_Q_CTRL,0x00); 
+	writeRegister(RFID_REG_RX_CTRL_1,0x8B); 
+	writeRegister(RFID_REG_DEC_CTRL,0x00); 
+	writeRegister(RFID_REG_BIT_PHASE,0x52);	 
+	writeRegister(RFID_REG_RX_THRESH,0x46); //66
+	writeRegister(RFID_REG_BPSKD_CTRL,0x00); 
+	writeRegister(RFID_REG_RX_CTRL_2,0x01); 
+ 	writeRegister(RFID_REG_CLK_Q_CTRL,0x00); 
  
-	WriteRC(RFID_REG_RX_WAIT,0x08); 
-	WriteRC(RFID_REG_CHANNEL_RED,0x0C); 
-	WriteRC(RFID_REG_CRC_PS_LSB,0xFE); 
-	WriteRC(RFID_REG_CRC_PS_MSB,0xFF); 
-	WriteRC(RFID_REG_TIME_SLOT_PER,0x00); 
-	WriteRC(RFID_REG_MFOUT_SEL,0x02);   	// enable SIGOUT = envelope 
-	WriteRC(RFID_REG_RFU27,0x00);   				// enable SIGOUT = envelope 
+	writeRegister(RFID_REG_RX_WAIT,0x08); 
+	writeRegister(RFID_REG_CHANNEL_RED,0x0C); 
+	writeRegister(RFID_REG_CRC_PS_LSB,0xFE); 
+	writeRegister(RFID_REG_CRC_PS_MSB,0xFF); 
+	writeRegister(RFID_REG_TIME_SLOT_PER,0x00); 
+	writeRegister(RFID_REG_MFOUT_SEL,0x02);   	// enable SIGOUT = envelope 
+	writeRegister(RFID_REG_RFU27,0x00);   				// enable SIGOUT = envelope 
  
 	// PAGE 5  FIFO, Timer and IRQ-Pin Configuration 
-	WriteRC(RFID_REG_FIFO_LEVEL,0x20); 
-	WriteRC(RFID_REG_TIMER_CLK,0x0B); 
-	WriteRC(RFID_REG_TIMER_CTRL,0x02); // TStopRxEnd=0,TStopRxBeg=1,TStartTxEnd=1,TStartTxBeg=0 
-	WriteRC(RFID_REG_TIMER_RELOAD,0x00); 
+	writeRegister(RFID_REG_FIFO_LEVEL,0x20); 
+	writeRegister(RFID_REG_TIMER_CLK,0x0B); 
+	writeRegister(RFID_REG_TIMER_CTRL,0x02); // TStopRxEnd=0,TStopRxBeg=1,TStartTxEnd=1,TStartTxBeg=0 
+	writeRegister(RFID_REG_TIMER_RELOAD,0x00); 
  
-	FlushFIFO();		           // empty	FIFO 
+	flushFIFO();		           // empty	FIFO 
  
-	WriteRC(RFID_REG_IRQ_PIN_CFG,0x03); //	interrupt active low enable
+	writeRegister(RFID_REG_IRQ_PIN_CFG,0x03); //	interrupt active low enable
 	I1PcdRfReset();	           // Rf - reset and enable output driver
 }
 
 void init_StdMode_15693(void) 
 { 
-	WriteRC(RFID_REG_CODER_CTRL,0x2E); 
-	WriteRC(RFID_REG_DEC_CTRL,0x34); 
-	WriteRC(RFID_REG_RX_WAIT,0x08);			// 256/fc => 0x01 = 18.88 us 0x08 = 151us 
-	WriteRC(RFID_REG_CHANNEL_RED,0x2C); 
-	WriteRC(RFID_REG_CRC_PS_LSB,0xFF); 
-	WriteRC(RFID_REG_CRC_PS_MSB,0xFF); 
-	WriteRC(RFID_REG_TIMER_CLK,0x0B); 
-	WriteRC(RFID_REG_BIT_PHASE,0xCD); 
-	WriteRC(RFID_REG_MOD_WIDTH_SOF,0x3F); 
+	writeRegister(RFID_REG_CODER_CTRL,0x2E); 
+	writeRegister(RFID_REG_DEC_CTRL,0x34); 
+	writeRegister(RFID_REG_RX_WAIT,0x08);			// 256/fc => 0x01 = 18.88 us 0x08 = 151us 
+	writeRegister(RFID_REG_CHANNEL_RED,0x2C); 
+	writeRegister(RFID_REG_CRC_PS_LSB,0xFF); 
+	writeRegister(RFID_REG_CRC_PS_MSB,0xFF); 
+	writeRegister(RFID_REG_TIMER_CLK,0x0B); 
+	writeRegister(RFID_REG_BIT_PHASE,0xCD); 
+	writeRegister(RFID_REG_MOD_WIDTH_SOF,0x3F); 
 }
 
 
@@ -240,23 +134,22 @@ void main (void)
 	SPI0_Init();
 
 	EA = 0;								// disable global interrupts
-
 	LED_R = 1;
 
 	// Initialization steps
-	temp = ReadRC(RFID_REG_CMD);
+	temp = readRegister(RFID_REG_CMD);
 	if(temp != RFID_CMD_IDLE) {
 		if(temp == RFID_CMD_STARTUP) {
 			// c8051f310 is in startup phase, waiting
-			while(ReadRC(RFID_REG_CMD) != RFID_CMD_IDLE);
+			while(readRegister(RFID_REG_CMD) != RFID_CMD_IDLE);
 		} else {
 			// Chip is stuck on any other command, reseting to idle
-			WriteRC(RFID_REG_CMD, RFID_CMD_IDLE);
+			writeRegister(RFID_REG_CMD, RFID_CMD_IDLE);
 			
 			// Empty buffer if necessary
-			temp = ReadRC(RFID_REG_DATA_LEN);
+			temp = readRegister(RFID_REG_DATA_LEN);
 			for(i=0; i<temp; i++) {
-				ReadRC(RFID_REG_DATA);
+				readRegister(RFID_REG_DATA);
 			}
 		}
 	}
@@ -268,11 +161,11 @@ void main (void)
 	for(i=0; i<100; i++);
 
 	//From "idle"
-	WriteRC(RFID_REG_IR_EN,	0x3f); // disable interrupts 
-	WriteRC(RFID_REG_IR_RQ,	0x3f);
-	ClearBitMask(RFID_REG_DEC_CTRL, 0x40);  //	Rx Multiple	disable 
-	WriteRC(RFID_REG_FIFO_LEVEL,0x20); 
-	WriteRC(RFID_REG_CMD, RFID_CMD_IDLE);	        // command idle 
+	writeRegister(RFID_REG_IR_EN,	0x3f); // disable interrupts 
+	writeRegister(RFID_REG_IR_RQ,	0x3f);
+	clearBitMask(RFID_REG_DEC_CTRL, 0x40);  //	Rx Multiple	disable 
+	writeRegister(RFID_REG_FIFO_LEVEL,0x20); 
+	writeRegister(RFID_REG_CMD, RFID_CMD_IDLE);	        // command idle 
 
 	// At this point the chip is supposed to be correctly configured and ready to transmit
 
@@ -345,46 +238,91 @@ void RFIDTransceive(unsigned char size)
 	//unsigned char status, err;
 	unsigned char i, s;
 
-	//WriteRC(RFID_REG_ERROR, 0x00);
-	ReadRC(RFID_REG_CMD);
-	ReadRC(RFID_REG_ERROR);
+	//writeRegister(RFID_REG_ERROR, 0x00);
+	readRegister(RFID_REG_CMD);
+	readRegister(RFID_REG_ERROR);
 
-	SetBitMask(RFID_REG_CHANNEL_RED, 0x04);	// enable TxCRC 
-	WriteRC(RFID_REG_TIMER_RELOAD, TimerReload); 
-	WriteRC(RFID_REG_TIMER_CTRL,0x06); 		// TStopRxEnd=0,TStopRxBeg=1, TStartTxEnd=1,TStartTxBeg=0
+	setBitMask(RFID_REG_CHANNEL_RED, 0x04);	// enable TxCRC 
+	writeRegister(RFID_REG_TIMER_RELOAD, TimerReload); 
+	writeRegister(RFID_REG_TIMER_CTRL,0x06); 		// TStopRxEnd=0,TStopRxBeg=1, TStartTxEnd=1,TStartTxBeg=0
 
-	FlushFIFO();
+	flushFIFO();
 
-	WriteRC(RFID_REG_CMD, 0x00); 
+	writeRegister(RFID_REG_CMD, 0x00); 
 	//SPIWrite(RFID_REG_IR_EN, 0x81);		// set LowAlertEn to write data	to FIFO	(with RC500Isr) 
 	//SPIWrite(RFID_REG_IR_RQ, 0x3F); 		//	clear all IRqs 
 	//SPIWrite(RFID_REG_IR_EN, 0x38 | 0x80);	 //	enable TxIEn, RxIEn, TIen 
-	WriteRC(RFID_REG_IR_EN, 0x00);
-	WriteRC(RFID_REG_IR_RQ, 0x00);
+	writeRegister(RFID_REG_IR_EN, 0x00);
+	writeRegister(RFID_REG_IR_RQ, 0x00);
 
 
 
-	WriteRC(RFID_REG_CMD, RFID_CMD_TRANSCEIVE);	// start to send command to label 
+	writeRegister(RFID_REG_CMD, RFID_CMD_TRANSCEIVE);	// start to send command to label 
 
 	for(i=0; i<size; i++) {
-		WriteRC(RFID_REG_DATA, spi_output_buffer[i]);
+		writeRegister(RFID_REG_DATA, spi_output_buffer[i]);
 	}
 
 
 	//SPIWrite(RFID_REG_CMD, RFID_CMD_TRANSCEIVE);
 
 	do {
-		i = ReadRC(RFID_REG_STATUS);
-		//ReadRC(RFID_REG_ERROR);
+		i = readRegister(RFID_REG_STATUS);
+		//readRegister(RFID_REG_ERROR);
 		if(i&0x04) {
-			s = ReadRC(RFID_REG_ERROR);
+			s = readRegister(RFID_REG_ERROR);
 		}
 	} while((i & 0x70) != 0);
 
 	i = 0;
-	s = ReadRC(RFID_REG_DATA_LEN);
+	s = readRegister(RFID_REG_DATA_LEN);
 	for(i=0; i<s; i++) {
-		spi_input_buffer[i] = ReadRC(RFID_REG_DATA);
+		spi_input_buffer[i] = readRegister(RFID_REG_DATA);
 	}
+}
+
+
+/**
+ * Generic write
+ */
+void writeRegister(unsigned char address, unsigned char value)
+{
+	spi_wr(0x00, GetRegPage(address));	// select appropriate page by writing the page number to Page0 register
+	spi_wr(address&0x07, value);		// write value at the specified address
+}
+
+/**
+ * Generic read
+ */
+unsigned char readRegister(unsigned char address)
+{
+	spi_wr(0x00, GetRegPage(address));	// select appropriate page by writing the page number to Page0 register
+	return spi_rd(address&0x07);		//read value at the specified register
+}
+
+/**
+ * Set a bit mask
+ */
+void setBitMask(unsigned char reg,unsigned char mask)  
+{
+	char tmp = readRegister(reg);
+	writeRegister(reg,tmp|mask);						// set bit mask
+}
+
+/**
+ * Clear a bit mask
+ */
+void clearBitMask(unsigned char reg,unsigned char mask) 
+{
+   char tmp = readRegister(reg);
+   writeRegister(reg,tmp & ~mask);  											// clear bit mask
+}
+
+/**
+ * Flush FIFO buffer
+ */
+void flushFIFO(void)
+{  
+   setBitMask(RFID_REG_CONTROL,0x01);
 }
 

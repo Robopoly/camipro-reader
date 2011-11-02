@@ -105,6 +105,6 @@ sbit SW2 = P0^7;						// SW2='0' means switch pressed
 
 /* SPI Constants */
 #define SPICLK				12845056	// SPI maximum SCK frequency in Hz
-#define MAX_BUFFER_SIZE		32
+
 
 #endif
