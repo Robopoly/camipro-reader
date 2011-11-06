@@ -75,7 +75,7 @@ void I1PcdConfig(void)
 	writeRegister(RFID_REG_RX_CTRL_1,0x8B); 
 	writeRegister(RFID_REG_DEC_CTRL,0x00); 
 	writeRegister(RFID_REG_BIT_PHASE,0x52);	 
-	writeRegister(RFID_REG_RX_THRESH,0x46); //66
+	writeRegister(RFID_REG_RX_THRESH,0x67); //66
 	writeRegister(RFID_REG_BPSKD_CTRL,0x00); 
 	writeRegister(RFID_REG_RX_CTRL_2,0x01); 
  	writeRegister(RFID_REG_CLK_Q_CTRL,0x00); 
@@ -274,7 +274,8 @@ void RFIDTransceive(unsigned char size)
 		}
 	} while((i & 0x70) != 0);
 
-	i = 0;
+	for(i=0; i<150; i++);
+
 	s = readRegister(RFID_REG_DATA_LEN);
 	for(i=0; i<s; i++) {
 		spi_input_buffer[i] = readRegister(RFID_REG_DATA);
@@ -306,7 +307,7 @@ unsigned char readRegister(unsigned char address)
 void setBitMask(unsigned char reg,unsigned char mask)  
 {
 	char tmp = readRegister(reg);
-	writeRegister(reg,tmp|mask);						// set bit mask
+	writeRegister(reg,tmp|mask);		// set bit mask
 }
 
 /**
@@ -315,7 +316,7 @@ void setBitMask(unsigned char reg,unsigned char mask)
 void clearBitMask(unsigned char reg,unsigned char mask) 
 {
    char tmp = readRegister(reg);
-   writeRegister(reg,tmp & ~mask);  											// clear bit mask
+   writeRegister(reg,tmp & ~mask); 		// clear bit mask
 }
 
 /**

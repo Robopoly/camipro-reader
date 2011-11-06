@@ -27,7 +27,8 @@
 /**
  * SPI_SSEL is cleared to choose the reader as a slave for SPI communication
  */
-void ssel_l(void)	
+void ssel_l(void)
+{
 	NSSMD0 = 0;
 }
 

@@ -21,8 +21,6 @@
 #ifndef __CAMIPROREADER__H
 #define __CAMIPROREADER__H
 
-
-
 // 16-bit SFR Definitions for 'F30x
 sfr16 TMR2RL	= 0xca;					// Timer2 reload value
 sfr16 TMR2		= 0xcc;					// Timer2 counter
